@@ -21,7 +21,7 @@ harness = false
 [dependencies]
 anyhow = "1.0.104"
 blake3 = { version = "=1.8.6", features = ["mmap", "rayon", "traits-preview"] }
-bzip2 = "0.5.2"
+bzip2 = "0.6.1"
 dirs = "7.0"
 dunce = "1.0.5"
 filetime = "0.2.29"
