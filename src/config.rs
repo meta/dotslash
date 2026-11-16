@@ -136,7 +136,7 @@ pub fn parse_file(data: &str) -> anyhow::Result<(Value, ConfigFile)> {
             anyhow::format_err!("DotSlash file must start with `{REQUIRED_HEADER}`")
         })?;
 
-    let value = jsonc_parser::parse_to_serde_value::<Value>(data, &Default::default())?
+    let value = jsonc_parser::parse_to_serde_value::<Option<Value>>(data, &Default::default())?
         .with_context(|| anyhow::format_err!("Failed to parse JSON"))?;
     let config_file = ConfigFile::deserialize(&value).map_err(|err| {
         if value.get("oncall").is_some() {
