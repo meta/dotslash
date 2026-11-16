@@ -673,11 +673,11 @@ dependencies = [
 
 [[package]]
 name = "jsonc-parser"
-version = "0.30.0"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25ac804b0cb9f49ec7531e7d5e3d9e4913c7f2d8d110507a662eaf8d4925c0b4"
+checksum = "45157f76d8fbe134e0c97403d69ac48989a1e0249a058b20f9f5eeff11bb09f0"
 dependencies = [
- "serde_json",
+ "serde",
 ]
 
 [[package]]
