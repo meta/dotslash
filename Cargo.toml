@@ -42,7 +42,7 @@ zstd = { version = "0.14.3", features = ["experimental", "zstdmt"] }
 assert_matches = "1.5"
 buck-resources = "1"
 criterion = "0.8.2"
-snapbox = { version = "0.6.24", features = ["color-auto", "diff", "json", "regex"], default-features = false }
+snapbox = { version = "1.2.2", features = ["color-auto", "diff", "json", "regex"], default-features = false }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.31.3", features = ["dir", "event", "hostname", "inotify", "ioctl", "mman", "mount", "net", "poll", "ptrace", "reboot", "resource", "sched", "signal", "term", "time", "user", "zerocopy"] }
