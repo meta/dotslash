@@ -62,6 +62,12 @@ pub fn download_artifact<P: ProviderFactory>(
     let file_lock = acquire_download_lock_for_artifact(artifact_location)
         .context("failed to get artifact lock")?;
 
+    // Another process may have fetched the artifact while we were waiting for
+    // the lock.
+    if artifact_location.executable.exists() {
+        return Ok(());
+    }
+
     // Record warnings: only reported if no provider succeeds.
     let mut warnings = vec![];
 
@@ -330,9 +336,73 @@ pub fn acquire_download_lock_for_artifact(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use rand::SeedableRng;
 
     use super::*;
+    use crate::config::Arg0;
+    use crate::provider::Provider;
+
+    struct PanickingProviderFactory;
+
+    impl ProviderFactory for PanickingProviderFactory {
+        fn get_provider(&self, provider_type: &str) -> anyhow::Result<Box<dyn Provider>> {
+            panic!("unexpected fetch with provider type `{provider_type}`");
+        }
+    }
+
+    /// Simulates `download_artifact()` being called when the executable is
+    /// already in the cache. Callers only call it when they didn't find the
+    /// executable, but it can be there anyway by the time
+    /// `download_artifact()` holds the lock:
+    ///
+    /// - Another process fetched the artifact after the caller checked,
+    ///   usually while this process waited for the lock. That process may
+    ///   have run the same DotSlash file, or a different one whose artifact
+    ///   is the same archive (e.g. `node` and `npx` from one Node.js tarball).
+    /// - Running the executable failed with a not-found error even though it
+    ///   exists, e.g. because its shebang interpreter is missing.
+    ///
+    /// In either case, `download_artifact()` should not download the artifact
+    /// again.
+    #[test]
+    fn download_artifact_skips_fetch_if_already_present() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let artifact_directory = temp_dir.path().join("artifact");
+        let executable = artifact_directory.join("hello");
+        fs::create_dir(&artifact_directory).unwrap();
+        fs::write(&executable, "").unwrap();
+        let artifact_location = ArtifactLocation {
+            artifact_directory,
+            executable,
+            lock_path: temp_dir.path().join("lock"),
+            arg0: Arg0::UnderlyingExecutable,
+        };
+        let artifact_entry = ArtifactEntry {
+            size: 0,
+            hash: HashAlgorithm::Sha256,
+            digest: Digest::try_from(
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_owned(),
+            )
+            .unwrap(),
+            format: ArtifactFormat::Plain,
+            path: "hello".parse().unwrap(),
+            providers: vec![
+                serde_json::from_str(r#"{"url": "https://example.com/hello"}"#).unwrap(),
+            ],
+            arg0: Arg0::UnderlyingExecutable,
+            readonly: true,
+            providers_order: ProvidersOrder::Sequential,
+        };
+
+        download_artifact(
+            &artifact_entry,
+            &artifact_location,
+            &PanickingProviderFactory,
+        )
+        .expect("download_artifact should succeed without fetching");
+    }
 
     #[test]
     fn providers_in_order_sequential() {
