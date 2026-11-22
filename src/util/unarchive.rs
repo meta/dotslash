@@ -15,7 +15,7 @@ use std::io::Seek;
 use std::path::Path;
 
 use bzip2::read::BzDecoder;
-use flate2::bufread::GzDecoder;
+use flate2::bufread::MultiGzDecoder;
 #[cfg(not(dotslash_internal))]
 use liblzma::bufread::XzDecoder;
 use tar::Archive;
@@ -86,8 +86,8 @@ where
         ArchiveType::TarBzip2 => unpack_tar(BzDecoder::new(reader), destination),
 
         #[cfg(not(dotslash_internal))]
-        ArchiveType::Gz => write_out(GzDecoder::new(reader), destination),
-        ArchiveType::TarGz => unpack_tar(GzDecoder::new(reader), destination),
+        ArchiveType::Gz => write_out(MultiGzDecoder::new(reader), destination),
+        ArchiveType::TarGz => unpack_tar(MultiGzDecoder::new(reader), destination),
 
         #[cfg(not(dotslash_internal))]
         ArchiveType::Xz => write_out(XzDecoder::new(reader), destination),
@@ -148,4 +148,60 @@ where
     archive.set_preserve_permissions(true);
     archive.set_preserve_mtime(true);
     archive.unpack(destination_dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write as _;
+
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+
+    use super::*;
+
+    fn gzip_members(parts: &[&[u8]]) -> io::Result<Vec<u8>> {
+        let mut compressed = Vec::new();
+        for part in parts {
+            let mut encoder = GzEncoder::new(&mut compressed, Compression::default());
+            encoder.write_all(part)?;
+            encoder.finish()?;
+        }
+        Ok(compressed)
+    }
+
+    #[test]
+    #[cfg(not(dotslash_internal))]
+    fn gzip_multiple_members() -> io::Result<()> {
+        let mut compressed = gzip_members(&[b"hello", b" world"])?;
+        let dir = tempfile::tempdir()?;
+        let destination = dir.path().join("output");
+
+        unarchive(io::Cursor::new(&compressed), &destination, ArchiveType::Gz)?;
+
+        assert_eq!(std::fs::read(&destination)?, b"hello world");
+
+        let crc_offset = compressed.len() - 8;
+        compressed[crc_offset] ^= 1;
+        assert!(unarchive(io::Cursor::new(compressed), &destination, ArchiveType::Gz).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn tar_gzip_multiple_members() -> io::Result<()> {
+        let content = b"hello world";
+        let mut archive = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        archive.append_data(&mut header, "tool", &content[..])?;
+        let archive = archive.into_inner()?;
+        let compressed = gzip_members(&[&archive[..512], &archive[512..]])?;
+        let dir = tempfile::tempdir()?;
+
+        unarchive(io::Cursor::new(compressed), dir.path(), ArchiveType::TarGz)?;
+
+        assert_eq!(std::fs::read(dir.path().join("tool"))?, content);
+        Ok(())
+    }
 }
