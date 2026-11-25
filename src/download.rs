@@ -320,7 +320,9 @@ pub fn acquire_download_lock_for_artifact(
         if fs_ctx::create_dir_all(lock_dir).is_ok() {
             match FileLock::acquire(&artifact_location.lock_path) {
                 Ok(file_lock) => return Ok(file_lock),
-                Err(err @ FileLockError::LockExclusive(..)) => return Err(err.into()),
+                Err(err @ (FileLockError::LockExclusive(..) | FileLockError::WouldBlock(..))) => {
+                    return Err(err.into());
+                }
                 Err(FileLockError::Create(..) | FileLockError::LockShared(..)) => {}
             }
         }

@@ -11,7 +11,12 @@
 //! Wrapper around `std::fs::File::lock`.
 
 use std::fs::File;
+use std::fs::TryLockError;
 use std::io;
+#[cfg(unix)]
+use std::os::fd::AsFd;
+#[cfg(unix)]
+use std::os::fd::BorrowedFd;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -34,6 +39,13 @@ pub enum FileLockError {
     )]
     #[error("failed to get shared lock `{0}`")]
     LockShared(PathBuf, #[source] io::Error),
+
+    #[cfg_attr(
+        not(dotslash_internal),
+        expect(dead_code, reason = "only constructed by `FileLock::try_acquire`")
+    )]
+    #[error("`{0}` is held by another process")]
+    WouldBlock(PathBuf),
 }
 
 #[derive(Debug, Default)]
@@ -67,6 +79,40 @@ impl FileLock {
         inner(path.as_ref())
     }
 
+    /// Like [`FileLock::acquire`], but reports [`FileLockError::WouldBlock`]
+    /// instead of waiting when another process holds the lock. The garbage
+    /// collector uses this so that one long-lived artifact cannot stall the
+    /// whole sweep.
+    #[cfg_attr(
+        not(dotslash_internal),
+        expect(dead_code, reason = "only used by the internal release")
+    )]
+    pub fn try_acquire<P>(path: P) -> Result<FileLock, FileLockError>
+    where
+        P: AsRef<Path>,
+    {
+        fn inner(path: &Path) -> Result<FileLock, FileLockError> {
+            let lock_file = File::options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(path)
+                .map_err(|e| FileLockError::Create(path.to_path_buf(), e))?;
+
+            match lock_file.try_lock() {
+                Ok(()) => Ok(FileLock {
+                    file: Some(lock_file),
+                }),
+                Err(TryLockError::WouldBlock) => Err(FileLockError::WouldBlock(path.to_path_buf())),
+                Err(TryLockError::Error(e)) => {
+                    Err(FileLockError::LockExclusive(path.to_path_buf(), e))
+                }
+            }
+        }
+        inner(path.as_ref())
+    }
+
     #[cfg_attr(
         not(dotslash_internal),
         expect(dead_code, reason = "only used by the internal release")
@@ -93,6 +139,16 @@ impl FileLock {
             })
         }
         inner(path.as_ref())
+    }
+
+    /// The descriptor holding the lock, if one is held.
+    #[cfg(unix)]
+    #[cfg_attr(
+        not(dotslash_internal),
+        expect(dead_code, reason = "only used by the internal release")
+    )]
+    pub fn as_fd(&self) -> Option<BorrowedFd<'_>> {
+        self.file.as_ref().map(AsFd::as_fd)
     }
 }
 
