@@ -10,15 +10,20 @@
 
 use std::path::Path;
 
-use anyhow::Context as _;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::config::ArtifactEntry;
 use crate::curl::CurlCommand;
+use crate::curl::CurlError;
 use crate::curl::FetchContext;
 use crate::provider::Provider;
 use crate::util::FileLock;
+use crate::util::HttpStatus;
+
+const AUTH_HINT: &str = "the server rejected the request as unauthorized; to authenticate, add a \
+     `machine <host> login <user> password <token>` entry to your ~/.netrc file \
+     (%USERPROFILE%\\_netrc on Windows)";
 
 pub struct HttpProvider {}
 
@@ -47,7 +52,19 @@ impl Provider for HttpProvider {
         };
         curl_cmd
             .get_request(destination, &fetch_context)
-            .with_context(|| format!("failed to fetch `{}`", url))?;
+            .map_err(|e| {
+                let is_auth_error = matches!(
+                    e,
+                    CurlError::HttpStatus(_, HttpStatus::Unauthorized | HttpStatus::Forbidden)
+                );
+                let err = anyhow::Error::new(e);
+                let err = if is_auth_error {
+                    err.context(AUTH_HINT)
+                } else {
+                    err
+                };
+                err.context(format!("failed to fetch `{}`", url))
+            })?;
         Ok(())
     }
 }

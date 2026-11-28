@@ -262,6 +262,19 @@ Mozilla/5.0 (compatible; DotSlash/0.1.0; +https://dotslash-cli.com)
 
 :::
 
+#### Authentication
+
+`curl` is invoked with `--netrc-optional`, so URLs that require HTTP basic
+authentication work when the host has an entry in your `~/.netrc` file:
+
+```text
+machine artifacts.example.com login myuser password mytoken
+```
+
+On Windows, curl also reads `%USERPROFILE%\_netrc` and `%USERPROFILE%\.netrc`.
+Hosts without an entry are fetched without credentials. Credentials are never
+stored in the DotSlash file.
+
 Note that in order to facilitate creating a DotSlash file by hand, you can use
 DotSlash's `create-url-entry` subcommand to generate the boilerplate for a
 platform entry based on a URL as follows:

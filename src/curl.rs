@@ -317,6 +317,10 @@ impl CurlCommand<'_> {
             curl_command.arg("--ssl-revoke-best-effort");
         }
 
+        // Use credentials from ~/.netrc (%USERPROFILE%\_netrc or .netrc on
+        // Windows) for hosts that have an entry. Missing file is not an error.
+        curl_command.arg("--netrc-optional");
+
         curl_command.arg("--user-agent");
         curl_command.arg(USER_AGENT);
 
